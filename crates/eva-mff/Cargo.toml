@@ -1,0 +1,15 @@
+[package]
+name = "eva-mff"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Read-only, bounded-window EGI MFF reader for EEG applications"
+publish = false
+license-file = "../../LICENSE"
+
+[dependencies]
+roxmltree = "0.20"
+time = { version = "0.3", features = ["parsing"] }
+
+[dev-dependencies]
+tempfile = "3"

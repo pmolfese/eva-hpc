@@ -1,0 +1,23 @@
+{
+  "example_3.mff/Events_User_Events.xml": "89cf96fb460f1e221df976dd1f9793ecf7486f8f238afdc83c5a227a70870d03",
+  "example_3.mff/_launchMFF.lch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "example_3.mff/coordinates.xml": "d2b42941b1fd8033a7f873e4abc8367001892d740a443c05fa01d7f87b9c9ff3",
+  "example_3.mff/epochs.xml": "c33248e4974c62ec8c46c6a6b938eb2f89f07c5f77ac673bc2b55125b2e5f06c",
+  "example_3.mff/info.xml": "88d7cc2b7254499e6487bbd35855fb05c70cfef8c11fa026f9937602e81b6838",
+  "example_3.mff/info1.xml": "3f925545e7b2305d8499961de43273a58438c79a341fe4b5423c8ee99394544c",
+  "example_3.mff/info2.xml": "9c142ecb29442ae69ace9de9c4013cc521101c057bda052d54bbd4be76d934c5",
+  "example_3.mff/pnsSet.xml": "329d221216d3b19809d5894554134ae938cee955417d817fddea5995c36833dd",
+  "example_3.mff/sensorLayout.xml": "7ee4ed2d4bf7e365f719f014d97fd74d408e43445f3c096d404ddc19252df271",
+  "example_3.mff/signal1.bin": "446d7ce714ca2ececc426c9733af37808baa96b9b6e2ece6e3f515471b14ece1",
+  "example_3.mff/signal2.bin": "fd696c09846e01e1d0c1310ec7d3045eb7b32b23ce58509d85981007f482904d",
+  "example_3.mff/subject.xml": "468716360b258085ee4d10b7a9a46a8c41fd06a59491bcd48c4edbfb56c82c58",
+  "example_4.mff/Events_User Events.xml": "31dcf5b3098dfb3f97f806d43a87d13c7985e3ef9b06b85f98ca6398371add6d",
+  "example_4.mff/_launchMFF.lch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "example_4.mff/categories.xml": "05178e011f6f14feb76dc0ad3c3f5fc1d6bed347acae55b31e05c6ebc4fcd1af",
+  "example_4.mff/epochs.xml": "5136dc2eb8fb4c9bdcdecbbc7da4dddb13a8314d3fdcfba83e936682aad70301",
+  "example_4.mff/history.xml": "85683ec68f42ae4cefb0bd0709c906f2736109b51032e8013d61f2f567134fd4",
+  "example_4.mff/info.xml": "a0913b49aa1a2762966d5109339a8ee7bb493632c9e99e805e56d2bf56dd140d",
+  "example_4.mff/info1.xml": "9c28fba619d03ad1209a3c2a124eb50d7da0a597c31a2a89a4966520114058f4",
+  "example_4.mff/sensorLayout.xml": "7ee4ed2d4bf7e365f719f014d97fd74d408e43445f3c096d404ddc19252df271",
+  "example_4.mff/signal1.bin": "64743b79dc95b26b7201a7a56082025606d48b5da07795888061dfb0d48ce189"
+}

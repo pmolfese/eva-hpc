@@ -1,0 +1,21 @@
+[package]
+name = "eva-cli"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+license-file = "../../LICENSE"
+
+[[bin]]
+name = "eva"
+path = "src/main.rs"
+
+[dependencies]
+eva-core = { path = "../eva-core" }
+eva-mff = { path = "../eva-mff" }
+serde_json = "1"
+roxmltree = "0.20"
+time = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

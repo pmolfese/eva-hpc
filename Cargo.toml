@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/eva-mff", "crates/eva-core", "crates/eva-viewer", "crates/eva-cli"]
+resolver = "2"
