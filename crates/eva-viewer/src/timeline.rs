@@ -1,6 +1,7 @@
 //! Three aligned event tracks with bounded, nonoverlapping label placement.
 use super::*;
-pub const HEIGHT: f32 = 192.;
+const ROW_HEIGHT: f32 = 30.;
+pub const HEIGHT: f32 = 8. + 3. * ROW_HEIGHT + 8.;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Track {
     Events,
@@ -41,16 +42,16 @@ pub struct Marker {
     pub color: Color32,
     pub help: String,
 }
-// Two label shelves per track. Shift badges left at the right edge; never overlap.
-fn place(bounds: Rect, x: f32, width: f32, ends: &mut [f32; 2]) -> Option<Rect> {
+// One compact label shelf per track. Shift edge badges left; never overlap.
+fn place(bounds: Rect, x: f32, width: f32, ends: &mut [f32; 1]) -> Option<Rect> {
     let width = width.min(bounds.width());
     let left = (x + 4.).clamp(bounds.left(), (bounds.right() - width).max(bounds.left()));
-    for (row, end) in ends.iter_mut().enumerate() {
+    for end in ends.iter_mut() {
         if left >= *end {
             *end = left + width + 4.;
             return Some(Rect::from_min_size(
-                Pos2::new(left, bounds.top() + 3. + row as f32 * 23.),
-                Vec2::new(width, 21.),
+                Pos2::new(left, bounds.center().y - 10.),
+                Vec2::new(width, 20.),
             ));
         }
     }
@@ -67,17 +68,32 @@ pub fn paint(
     markers.sort_by(|a, b| a.time.total_cmp(&b.time));
     let painter = ui.painter_at(rect);
     let x = |t: f64| plot.left() + ((t - start) / (end - start)) as f32 * plot.width();
+    let panel = Rect::from_min_max(
+        Pos2::new(rect.left() + 4., rect.top() + 8.),
+        Pos2::new(plot.right(), rect.top() + 8. + 3. * ROW_HEIGHT),
+    );
+    painter.rect_filled(panel, 6., Color32::from_gray(253));
+    painter.rect_stroke(
+        panel,
+        6.,
+        Stroke::new(1., Color32::from_gray(226)),
+        egui::StrokeKind::Inside,
+    );
     for (index, title) in ["Events", "DINs / TREV", "Artifacts"].iter().enumerate() {
+        let top = panel.top() + index as f32 * ROW_HEIGHT;
         let lane = Rect::from_min_max(
-            Pos2::new(plot.left(), rect.top() + 8. + index as f32 * 60.),
-            Pos2::new(plot.right(), rect.top() + 64. + index as f32 * 60.),
+            Pos2::new(plot.left(), top),
+            Pos2::new(plot.right(), top + ROW_HEIGHT),
         );
-        painter.rect_stroke(
-            lane,
-            4.,
-            Stroke::new(1., Color32::from_gray(226)),
-            egui::StrokeKind::Inside,
-        );
+        if index > 0 {
+            painter.line_segment(
+                [
+                    Pos2::new(panel.left() + 8., top),
+                    Pos2::new(panel.right() - 8., top),
+                ],
+                Stroke::new(1., Color32::from_gray(237)),
+            );
+        }
         painter.text(
             Pos2::new(rect.left() + 8., lane.center().y),
             egui::Align2::LEFT_CENTER,
@@ -87,7 +103,7 @@ pub fn paint(
         );
         let bounds = lane.shrink(2.);
         let p = painter.with_clip_rect(bounds);
-        let mut ends = [bounds.left(); 2];
+        let mut ends = [bounds.left(); 1];
         for (id, m) in markers
             .iter()
             .enumerate()
@@ -178,13 +194,11 @@ mod tests {
         assert_eq!(classify("DING", ""), Track::Events);
         assert_eq!(classify("Eye Movement", ""), Track::Artifacts);
         assert_eq!(classify("cue+", ""), Track::Events);
-        let b = Rect::from_min_size(Pos2::new(100., 0.), Vec2::new(200., 52.));
-        let mut ends = [b.left(); 2];
+        let b = Rect::from_min_size(Pos2::new(100., 0.), Vec2::new(200., 26.));
+        let mut ends = [b.left(); 1];
         let first = place(b, 299., 100., &mut ends).unwrap();
-        let second = place(b, 300., 100., &mut ends).unwrap();
-        assert!(b.contains_rect(first) && b.contains_rect(second));
-        assert!(!first.intersects(second));
+        assert!(b.contains_rect(first));
         assert!(place(b, 300., 100., &mut ends).is_none());
-        assert!(b.contains_rect(place(b, -500., 500., &mut [b.left(); 2]).unwrap()));
+        assert!(b.contains_rect(place(b, -500., 500., &mut [b.left(); 1]).unwrap()));
     }
 }

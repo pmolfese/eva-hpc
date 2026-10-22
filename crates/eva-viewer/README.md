@@ -307,7 +307,8 @@ jump to candidates, or export a new JSON report. Purple/teal marks show the last
 completed detection; rerun after changing processing. Source EEG stays unchanged.
 No Define Artifact, templates, or artifact cleaning is enabled.
 
-The timeline has separate **Events**, **DINs / TREV**, and **Artifacts** tracks.
+The timeline is one compact panel with **Events**, **DINs / TREV**, and **Artifacts**
+levels separated by subtle dividers.
 Artifact spans carry Blink / Eye movement labels and peak markers. Labels are
-kept inside each track and use two shelves to avoid overlap; hover a crowded
+kept inside each compact track with overlap avoidance; hover a crowded
 marker or span for its full name and timing.
