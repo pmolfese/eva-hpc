@@ -5,9 +5,11 @@ mod filter_ui;
 mod model;
 mod mri;
 mod mri_ui;
+mod ocular_ui;
 mod psa_ui;
 #[cfg(test)]
 mod tests;
+mod timeline;
 mod worker;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use eva_mff::{Recording, RecordingKind};
@@ -21,6 +23,7 @@ struct Viewer {
     worker: Worker,
     mri: mri::State,
     psa: psa_ui::State,
+    ocular: ocular_ui::State,
     active_id: u64,
     recording: Option<Arc<Recording>>,
     path: Option<PathBuf>,
@@ -65,6 +68,7 @@ impl Viewer {
             worker: Worker::new(cc.egui_ctx.clone()),
             mri: mri::State::default(),
             psa: psa_ui::State::default(),
+            ocular: ocular_ui::State::default(),
             active_id: 0,
             recording: None,
             path: None,
@@ -164,6 +168,7 @@ impl Viewer {
         self.interpolation.clear();
         self.mri = mri::State::default();
         self.psa = psa_ui::State::default();
+        self.ocular = ocular_ui::State::default();
         self.worker.cancel();
         self.filters = filter::Settings::default();
         self.filter_draft = filter::Settings::default();
@@ -400,12 +405,12 @@ impl Viewer {
             });
             for label in ["MRI", "FILTER", "ARTIFACTS", "PSA", "EEG", "EVENTS"] {
                 let tab=match label {"EEG"=>1,"FILTER"=>3,_=>0};
-                let implemented=label=="PSA" || label=="MRI" || label=="EEG" || label=="EVENTS" || label=="FILTER";
-                let enabled=implemented && self.recording.is_some() && !self.mri.running && !self.psa.running && (label!="PSA" || !self.recording.as_ref().is_some_and(|r|r.is_pns()));
-                let selected=enabled && match label {"PSA"=>self.psa.open || self.psa.show_results,"MRI"=>self.mri.open || self.corrected_source().is_some(),"FILTER"=>self.filters.active() || self.filter_original.is_some(),_=>self.inspector_open && self.tab==tab};
+                let implemented=label=="ARTIFACTS" || label=="PSA" || label=="MRI" || label=="EEG" || label=="EVENTS" || label=="FILTER";
+                let enabled=implemented && self.recording.is_some() && !self.mri.running && !self.psa.running && (label=="ARTIFACTS" || !self.ocular.running) && (!matches!(label,"PSA"|"ARTIFACTS") || !self.recording.as_ref().is_some_and(|r|r.is_pns()));
+                let selected=enabled && match label {"ARTIFACTS"=>self.ocular.open,"PSA"=>self.psa.open || self.psa.show_results,"MRI"=>self.mri.open || self.corrected_source().is_some(),"FILTER"=>self.filters.active() || self.filter_original.is_some(),_=>self.inspector_open && self.tab==tab};
                 let response=tool_button(ui,label,enabled,selected);
                 if response.clicked() {
-                    if label=="PSA" { self.psa.open=true; self.psa.bad_text=self.bad.iter().map(|v|(v+1).to_string()).collect::<Vec<_>>().join(","); } else if label=="MRI" { self.mri.open=true; } else if label=="FILTER" { self.open_filter_dialog(); } else { self.inspector_open = !(self.inspector_open && self.tab==tab); self.tab=tab; }
+                    if label=="ARTIFACTS" { self.ocular.open=true; } else if label=="PSA" { self.psa.open=true; self.psa.bad_text=self.bad.iter().map(|v|(v+1).to_string()).collect::<Vec<_>>().join(","); } else if label=="MRI" { self.mri.open=true; } else if label=="FILTER" { self.open_filter_dialog(); } else { self.inspector_open = !(self.inspector_open && self.tab==tab); self.tab=tab; }
                 }
                 if !implemented { response.on_disabled_hover_text("Not implemented in this first waveform port"); }
             }
@@ -590,6 +595,14 @@ impl Viewer {
                                     c.unit.as_deref().unwrap_or("unit unspecified")
                                 ),
                             )
+                            .on_hover_text(format!(
+                                "GCAL gain: {}\nAcquisition impedance: {}",
+                                c.calibration,
+                                c.impedance_kohm.map_or_else(
+                                    || "not recorded".into(),
+                                    |v| format!("{v:.1} kΩ")
+                                )
+                            ))
                             .changed()
                         {
                             self.hidden[c.index] = !shown;
@@ -642,7 +655,7 @@ impl Viewer {
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 4., Color32::WHITE);
         let plot = Rect::from_min_max(
-            rect.min + Vec2::new(110., 100.),
+            rect.min + Vec2::new(110., timeline::HEIGHT),
             rect.max - Vec2::new(18., 42.),
         );
         if plot.width() < 10. || plot.height() < 10. {
@@ -764,61 +777,51 @@ impl Viewer {
                 Color32::GRAY,
             );
         }
-        let lane = Rect::from_min_max(
-            Pos2::new(plot.left(), rect.top() + 8.),
-            Pos2::new(plot.right(), rect.top() + 83.),
-        );
-        painter.rect_stroke(
-            lane,
-            6.,
-            Stroke::new(1., Color32::from_gray(226)),
-            egui::StrokeKind::Inside,
-        );
-        painter.text(
-            Pos2::new(rect.left() + 10., lane.top() + 4.),
-            egui::Align2::LEFT_TOP,
-            "Events",
-            egui::FontId::proportional(13.),
-            Color32::from_gray(40),
-        );
-        if let Some(start) = &m.recording_start {
-            let short = start.get(..10).unwrap_or(start);
-            painter.text(
-                Pos2::new(rect.left() + 10., lane.top() + 26.),
-                egui::Align2::LEFT_TOP,
-                short,
-                egui::FontId::proportional(10.),
-                Color32::GRAY,
-            );
-        }
-        let begin_ns = (key.range.start as f64 / f64::from(m.sample_rate) * 1e9) as i128;
-        let end_ns = (key.range.end as f64 / f64::from(m.sample_rate) * 1e9) as i128;
+        let start_seconds = key.range.start as f64 / m.sample_rate as f64;
+        let end_seconds = key.range.end as f64 / m.sample_rate as f64;
+        let mut markers = Vec::new();
+        let begin_ns = (start_seconds * 1e9) as i128;
+        let end_ns = (end_seconds * 1e9) as i128;
         let first = m.events.partition_point(|e| e.onset_ns < begin_ns);
-        for (i, e) in m.events[first..]
-            .iter()
-            .take_while(|e| e.onset_ns <= end_ns)
-            .take(250)
-            .enumerate()
-        {
-            let x = sample_x(e.onset_ns as f64 / 1e9 * f64::from(m.sample_rate));
-            painter.line_segment(
-                [
-                    Pos2::new(x, lane.top() + 8.),
-                    Pos2::new(x, lane.bottom() - 8.),
-                ],
-                Stroke::new(1., Color32::from_rgb(255, 149, 73)),
-            );
-            if i < 12 {
-                let ep = painter.with_clip_rect(lane.shrink(1.));
-                let text = ep.layout_no_wrap(e.code.clone(), egui::FontId::proportional(10.), GOLD);
-                let badge = Rect::from_min_size(
-                    Pos2::new(x + 4., lane.top() + 6. + (i % 2) as f32 * 22.),
-                    text.size() + Vec2::new(10., 6.),
-                );
-                ep.rect_filled(badge, 6., Color32::from_rgb(255, 239, 224));
-                ep.galley(badge.min + Vec2::new(5., 3.), text, GOLD);
+        for e in m.events[first..].iter().take_while(|e| e.onset_ns < end_ns) {
+            let track = timeline::classify(&e.code, &e.source_file);
+            let time = e.onset_ns as f64 / 1e9;
+            markers.push(timeline::Marker {
+                track,
+                label: e.code.clone(),
+                time,
+                span: None,
+                color: match track {
+                    timeline::Track::Triggers => INK,
+                    timeline::Track::Artifacts => Color32::from_rgb(140, 45, 170),
+                    _ => GOLD,
+                },
+                help: format!(
+                    "{} · {:.6} s\n{}",
+                    e.code,
+                    time,
+                    e.label.as_deref().unwrap_or("")
+                ),
+            });
+        }
+        if let Some(report) = &self.ocular.result {
+            for e in report
+                .candidates
+                .iter()
+                .filter(|e| e.end_seconds > start_seconds && e.start_seconds < end_seconds)
+            {
+                let (label, color) = if e.kind == eva_core::ocular::Kind::Blink {
+                    ("Blink", Color32::from_rgb(140, 45, 170))
+                } else {
+                    ("Eye movement", Color32::from_rgb(0, 115, 105))
+                };
+                markers.push(timeline::Marker {track:timeline::Track::Artifacts,label:label.into(),time:e.peak_seconds,
+                    span:Some((e.start_seconds,e.end_seconds)),color,
+                    help:format!("{label} · {:.3}–{:.3} s\nPeak {:.3} s · {:.1} µV\nLast completed detection snapshot",e.start_seconds,e.end_seconds,e.peak_seconds,e.peak_uv),
+                });
             }
         }
+        timeline::paint(ui, rect, plot, start_seconds, end_seconds, markers);
         for (row, &ch) in channels.iter().enumerate() {
             let y = plot.top() + (row as f32 + 0.5) * row_height;
             let row_rect = Rect::from_min_max(
@@ -1108,6 +1111,7 @@ impl eframe::App for Viewer {
         self.filter_dialog(ui.ctx());
         self.mri_dialog(ui.ctx());
         self.psa_dialog(ui.ctx());
+        self.ocular_dialog(ui.ctx());
     }
 }
 fn tool_button(ui: &mut egui::Ui, label: &str, enabled: bool, selected: bool) -> egui::Response {

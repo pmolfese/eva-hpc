@@ -42,6 +42,7 @@ The capability descriptions below describe the current implementation.
 | Filtering | IIR/FIR/Auto, Butterworth/elliptic designs, high/low-pass, notch, CleanLine-style line-noise removal, average reference, and advanced design controls |
 | MRI correction | Allen AAS, FASTR, FARM, and Moosmann; volume markers, slice/multiband or explicit acquisition timing, alignment, scaling, OBS, ANC, and motion-related controls |
 | Interpolation | Perrin spherical splines using MFF scalp coordinates; interactive channel repair and headless export |
+| Ocular artifacts | Swift-style threshold detection of blinks/vertical and horizontal eye activity, independent settings, EGI channel tables, interval/peak overlays, and JSON reports |
 | PSA | Event-locked segmentation, baseline correction, average reference, category grouping/averaging, channel thresholds, global/per-epoch interpolation, escalation, and rejection reports |
 | Recording inspection | AFNI-style selected-column tables, CSV/JSON export, event counts/timing, sampling and duration metrics, channel locations, gaps, and processing history |
 | Provenance | Processing settings in `eva.xml`, audit logs, and preservation of existing source provenance |
@@ -74,6 +75,11 @@ Install a Rust toolchain with Cargo. The viewer requires **Rust 1.95 or newer**;
 `eva-mff`, `eva-core`, and `eva-cli` declare a **Rust 1.88** minimum. Use a current
 stable toolchain to build the complete workspace. Keep `Cargo.lock` when building
 this application repository.
+
+Use release builds for data processing: debug builds are substantially slower
+for filtering, interpolation, and PSA. Both interfaces share the same CPU engine.
+PSA batches unfiltered reads and reuses filtered tiles within a run (up to 64 MiB
+of additional cache), preserving processing settings and sample arithmetic.
 
 From the repository root:
 
@@ -220,6 +226,39 @@ names are checked for collisions before processing. Jobs use the same settings,
 including any MRI sidecars, and stop at the first failure; completed outputs
 remain. Use separate commands when recordings need different timing or motion files.
 
+### Detect ocular artifacts (thresholds only)
+
+```sh
+./target/release/eva artifactdetect -blink-minimum 100 -movement-minimum 125 input.mff eyes.json
+./target/release/eva artifactdetect -blink-topology derived -movement-topology derived input.mff eyes-derived.json
+./target/release/eva artifactdetect -help
+```
+
+In the viewer, **ARTIFACTS** opens the **Ocular Artifact Thresholds** sheet. Enable
+Eye Blink / Vertical and Eye Movement / Horizontal independently. The controls
+follow Swift EVA: amplitude minimum/cap, polarity, rise window, duration limits,
+merge gap, velocity/acceleration gates, and channel overrides. Defaults are
+150 µV, bipolar, 50 ms minimum duration, 1 s maximum, 250 ms merge gap, and legacy
+maximum-channel drive. Optional gates default off. Derived VEOG/HEOG follows
+Swift's bilateral common-mode blink and opponent-mode movement calculations.
+
+Automatic channel selection uses the Swift HydroCel/GSN 200 montage tables;
+unknown montages use the first four available channels with a warning. Verify
+these channels for your net. Overrides preserve entered order; derived mode
+splits the first half into the left group and the remainder into the right.
+Unknown physical units or invalid channels fail explicitly. Gaps and nonfinite
+samples are never bridged. No extra baseline removal or filtering is inserted.
+
+The GUI scans its current MRI/filter/interpolation snapshot. CLI detection scans
+calibrated data on disk; preprocess first to match that snapshot. Results mark
+exact spans and peaks in the event lane (purple blinks, teal movements); clicking
+a result jumps to its peak. Rerun after changing processing. **Export JSON…** and
+the CLI produce the same report format, including settings, resolved one-based
+channels, signed peak amplitudes, and exact half-open sample/time bounds. Output
+must be new; source MFF files remain untouched. These reports are not yet imported
+into PSA or saved as MFF events. No Define Artifact, template matching, or cleaning
+functionality is included.
+
 ### Segment and average with PSA
 
 ```sh
@@ -232,7 +271,9 @@ eva psa -events Shap,Fear -categories Shap=visual,Fear=visual \
 PSA exposes amplitude, slope and acceleration thresholds; bad-channel count or
 percentage limits; global/per-epoch spline repair; recurrent-channel escalation;
 explicit artifact-event and candidate-epoch exclusions; baseline correction;
-average reference; and category means. Thresholds require declared signal units.
+average reference; and category means. Thresholds require voltage units; missing MFF EEG units use the standard microvolt convention.
+The reader applies GCAL gain once and exposes ICAL electrode impedance in kΩ
+through `eva info -channels` and the viewer channel-list hover help.
 
 A `.psa` directory is an analysis bundle, **not an MFF recording**:
 

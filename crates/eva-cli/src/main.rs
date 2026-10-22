@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::AtomicU64,
 };
+mod artifactdetect;
 mod batch;
 mod info;
 mod mri;
@@ -19,7 +20,7 @@ fn main() {
 }
 fn run(mut args: Vec<OsString>) -> Result<(), String> {
     if args.is_empty() || matches!(args[0].to_str(), Some("-help" | "-h")) {
-        println!("EVA command-line tools\n\nUsage: eva filter [OPTIONS] <input.mff> <output.mff>\n\nUsage: eva interpolate <channels> [-exclude <channels>] <input.mff> <output.mff>\n\nUsage: eva mri [OPTIONS] <input.mff> <output.mff>\n\nUsage: eva info [METRICS] <input.mff> [input2.mff ...]\n\nUsage: eva psa [OPTIONS] <input.mff> <output-directory>\n\nUse eva <command> -help for options.");
+        println!("EVA command-line tools\n\nUsage: eva filter [OPTIONS] <input.mff> <output.mff>\n\nUsage: eva interpolate <channels> [-exclude <channels>] <input.mff> <output.mff>\n\nUsage: eva mri [OPTIONS] <input.mff> <output.mff>\n\nUsage: eva info [METRICS] <input.mff> [input2.mff ...]\n\nUsage: eva psa [OPTIONS] <input.mff> <output-directory>\n\nUsage: eva artifactdetect [OPTIONS] <input.mff> <output.json>\n\nUse eva <command> -help for options.");
         return Ok(());
     }
     if args[0] == "-version" {
@@ -27,6 +28,9 @@ fn run(mut args: Vec<OsString>) -> Result<(), String> {
         return Ok(());
     }
     let command = args.remove(0);
+    if command == "artifactdetect" {
+        return artifactdetect::run(args);
+    }
     if command == "psa" {
         return psa::run(args);
     }
@@ -444,7 +448,14 @@ mod tests {
         ])
         .is_err());
         assert!(export(input.path(), &input.path().join("nested.mff"), &s).is_err());
-        fs::remove_file(input.path().join("sensorLayout.xml")).unwrap();
+        let layout = input.path().join("sensorLayout.xml");
+        fs::write(
+            &layout,
+            fs::read_to_string(&layout)
+                .unwrap()
+                .replacen("<unit>uV</unit>", "<unit>mV</unit>", 1),
+        )
+        .unwrap();
         let fail = out.path().join("failed.mff");
         assert!(export(input.path(), &fail, &s).is_err());
         assert!(!fail.exists());

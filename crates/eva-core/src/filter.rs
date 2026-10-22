@@ -414,8 +414,16 @@ fn fir_forward(x: &[f64], b: &[f64]) -> Vec<f64> {
     a[..x.len()].iter().map(|v| v.re / n as f64).collect()
 }
 
+// Private to a single PSA run/recording. Evict earliest tiles when full.
+#[derive(Default)]
+struct TileCache {
+    values: std::collections::BTreeMap<(u64, usize), Vec<f32>>,
+    bytes: usize,
+}
+
 pub struct Plan {
     source: Option<std::sync::Arc<Vec<Vec<f32>>>>,
+    psa_tiles: Option<std::cell::RefCell<TileCache>>,
     settings: Settings,
     rate: u32,
     sections: Vec<Biquad>,
@@ -433,6 +441,7 @@ impl Plan {
         };
         Ok(Self {
             source: None,
+            psa_tiles: None,
             settings: settings.clone(),
             rate,
             sections: if settings.active() {
@@ -444,6 +453,39 @@ impl Plan {
             context: settings.context(rate),
             reference_cache: std::cell::RefCell::new(None),
         })
+    }
+    /// Only use on a plan dedicated to one immutable recording snapshot.
+    pub(crate) fn with_psa_cache(mut self) -> Self {
+        self.psa_tiles = Some(std::cell::RefCell::new(TileCache::default()));
+        self
+    }
+    pub(crate) fn read_epoch_channels(
+        &self,
+        r: &Recording,
+        range: Range<u64>,
+        g: &AtomicU64,
+        id: u64,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        check(g, id)?;
+        if !self.settings.active()
+            && self.settings.interpolation.is_empty()
+            && self.source.is_none()
+        {
+            let channels: Vec<_> = (0..r.metadata().channels.len()).collect();
+            match r.read_window(&channels, range.clone(), SampleValues::Calibrated) {
+                Ok(window) => return Ok(window.values),
+                // A large epoch may fit channel-by-channel but exceed the
+                // reader's per-window allocation limit when batched.
+                Err(eva_mff::Error::Limit(_)) => {}
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+        (0..r.metadata().channels.len())
+            .map(|ch| {
+                check(g, id)?;
+                self.read(r, ch, range.clone(), g, id)
+            })
+            .collect()
     }
     pub fn with_source(mut self, source: Option<std::sync::Arc<Vec<Vec<f32>>>>) -> Self {
         self.source = source;
@@ -657,6 +699,15 @@ impl Plan {
         while tile < range.end {
             check(g, id)?;
             let tile_end = (tile + TILE).min(total);
+            let a = range.start.max(tile);
+            let b = range.end.min(tile_end);
+            if let Some(cache) = &self.psa_tiles {
+                if let Some(values) = cache.borrow().values.get(&(tile, ch)) {
+                    out.extend_from_slice(&values[(a - tile) as usize..(b - tile) as usize]);
+                    tile = tile_end;
+                    continue;
+                }
+            }
             let mut read_start = tile.saturating_sub(self.context as u64);
             if self.settings.line == LineMode::CleanLine {
                 let hop = ((self.settings.window_seconds * f64::from(self.rate)).round() as u64
@@ -675,6 +726,24 @@ impl Plan {
                     .iter()
                     .map(|&v| v as f32),
             );
+            if let Some(cache) = &self.psa_tiles {
+                let stored: Vec<f32> = values
+                    [(tile - read_start) as usize..(tile_end - read_start) as usize]
+                    .iter()
+                    .map(|v| *v as f32)
+                    .collect();
+                let mut cache = cache.borrow_mut();
+                let bytes = stored.len() * std::mem::size_of::<f32>();
+                while cache.bytes + bytes > 64 * 1024 * 1024 {
+                    if let Some((_, old)) = cache.values.pop_first() {
+                        cache.bytes -= old.len() * std::mem::size_of::<f32>();
+                    } else {
+                        break;
+                    }
+                }
+                cache.bytes += bytes;
+                cache.values.insert((tile, ch), stored);
+            }
             tile = tile_end;
         }
         Ok(out)

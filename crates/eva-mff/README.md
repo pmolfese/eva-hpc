@@ -74,9 +74,10 @@ Channels and sample ranges are zero-based. Ranges are half-open. Returned data i
 channel-major in the requested channel order. `Raw` preserves stored float values;
 `Calibrated` multiplies by GCAL exactly once. Missing GCAL entries use identity.
 No referencing, filtering, polarity change, or implicit unit conversion occurs.
-Missing unit metadata is `None`; applications must not label such values as volts
-or microvolts without an independently established convention. Blank numbered
-sensor names become `E{number}`; missing layouts use `Ch {number}` placeholders.
+Missing EEG unit metadata uses the MFF microvolt (`uV`) convention, as in MNE.
+Explicit units are preserved; missing PNS units remain `None`. ICAL acquisition-start
+impedance is exposed per channel in kΩ, separately from GCAL gain calibration.
+Missing sensor names become `E{number}`; missing layouts use `Ch {number}` placeholders.
 An acquisition reference outside the recorded channel count is metadata only.
 
 Absolute event timestamps are parsed as RFC3339, preserving nanoseconds and timezone

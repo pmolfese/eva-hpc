@@ -54,10 +54,14 @@ pub struct Channel {
     /// Zero-based position in the binary stream, stable under display reordering.
     pub index: usize,
     pub label: String,
-    /// Explicit metadata only; None means unspecified, not dimensionless.
+    /// Declared units, or uV by the MFF EEG convention when absent.
+    /// PNS channels without unit metadata remain None.
     pub unit: Option<String>,
     /// GCAL multiplier; raw reads never apply this, calibrated reads apply it once.
     pub calibration: f32,
+    /// Electrode impedance at acquisition start from ICAL, in kΩ.
+    /// Missing/invalid measurements are None; never applied to samples.
+    pub impedance_kohm: Option<f32>,
     /// Display convention only. Samples are never polarity-inverted by the reader.
     pub positive_up: Option<bool>,
 }
@@ -92,6 +96,8 @@ impl Event {
 }
 #[derive(Debug, Clone)]
 pub struct Metadata {
+    /// Name declared by sensorLayout.xml (used for montage-specific channel selection).
+    pub sensor_layout_name: Option<String>,
     pub streams: Vec<Stream>,
     /// Active stream index (EEG for the root recording, PNS for `pns()`).
     pub eeg_stream: usize,

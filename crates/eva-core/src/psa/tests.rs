@@ -233,3 +233,89 @@ fn invalid_baseline_and_unknown_options_fail() {
     let c = cli::parse(&BTreeMap::from([("pre".into(), "0.4".into())])).unwrap();
     assert_eq!(c.baseline_start, -0.4);
 }
+
+#[test]
+fn missing_mff_eeg_units_allow_thresholds_but_unknown_units_do_not() {
+    let d = fixture();
+    let path = d.path().join("sensorLayout.xml");
+    let original = fs::read_to_string(&path).unwrap();
+    fs::write(&path, original.replace("<unit>uV</unit>", "")).unwrap();
+    let r = Recording::open(d.path()).unwrap();
+    let config = Config {
+        events: vec!["A".into()],
+        ..Config::default()
+    };
+    assert!(config.validate(&r).is_ok());
+    fs::write(
+        &path,
+        original.replace("<unit>uV</unit>", "<unit>unknown</unit>"),
+    )
+    .unwrap();
+    let r = Recording::open(d.path()).unwrap();
+    assert!(config.validate(&r).is_err());
+}
+
+#[test]
+fn psa_bulk_and_cached_reads_match_original_channel_path() {
+    let d = fixture();
+    write_signal(d.path(), false, true);
+    let r = Recording::open(d.path()).unwrap();
+    let generation = AtomicU64::new(1);
+    for enabled in [false, true] {
+        for reference in [false, true] {
+            let mut settings = filter::Settings {
+                enabled,
+                low_hz: 30.,
+                ..Default::default()
+            };
+            settings.options.average_reference = reference;
+            settings.interpolation = interpolation::recipes(&r, &[0], &[]).unwrap();
+            for interpolate in [true, false] {
+                if !interpolate {
+                    settings.interpolation.clear();
+                }
+                let original = filter::Plan::new(&settings, 100).unwrap();
+                let cached = filter::Plan::new(&settings, 100).unwrap().with_psa_cache();
+                for range in [0..80, 30..150, 120..200, 0..80] {
+                    let expected: Vec<_> = (0..5)
+                        .map(|ch| {
+                            original
+                                .read(&r, ch, range.clone(), &generation, 1)
+                                .unwrap()
+                        })
+                        .collect();
+                    let actual = cached
+                        .read_epoch_channels(&r, range, &generation, 1)
+                        .unwrap();
+                    for (a, b) in actual.iter().flatten().zip(expected.iter().flatten()) {
+                        assert!(a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan()));
+                    }
+                }
+                assert!(cached
+                    .read_epoch_channels(&r, 0..80, &generation, 2)
+                    .is_err());
+            }
+        }
+    }
+}
+
+#[test]
+fn bulk_read_respects_small_window_limits() {
+    let d = fixture();
+    let r = Recording::open_with_limits(
+        d.path(),
+        eva_mff::Limits {
+            max_window_bytes: 400,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let plan = filter::Plan::new(&filter::Settings::default(), 100)
+        .unwrap()
+        .with_psa_cache();
+    let rows = plan
+        .read_epoch_channels(&r, 0..80, &AtomicU64::new(1), 1)
+        .unwrap();
+    assert_eq!(rows.len(), 5);
+    assert_eq!(rows[0].len(), 80);
+}

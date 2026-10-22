@@ -115,6 +115,7 @@ pub(crate) fn open(path: &Path, limits: Limits) -> Result<Recording> {
             unit: None,
             calibration: 1.0,
             positive_up: None,
+            impedance_kohm: None,
         })
         .collect();
     let mut warnings = Vec::new();
@@ -146,10 +147,12 @@ pub(crate) fn open(path: &Path, limits: Limits) -> Result<Recording> {
         );
     }
     let mut acquisition_reference = None;
+    let mut sensor_layout_name = None;
     let layout_path = path.join("sensorLayout.xml");
     if layout_path.exists() {
         let text = xml(&layout_path, &limits)?;
         let doc = parse(&text)?;
+        sensor_layout_name = child(doc.root_element(), "name").map(str::to_owned);
         let mut seen = std::collections::HashSet::new();
         for sensor in doc.descendants().filter(|n| named(*n, "sensor")) {
             let kind = child(sensor, "type").unwrap_or("0");
@@ -184,9 +187,15 @@ pub(crate) fn open(path: &Path, limits: Limits) -> Result<Recording> {
     }
     if channels.iter().any(|c| c.unit.is_none()) {
         warnings.push(
-            "Some channel units are unspecified; no physical unit conversion is inferred".into(),
+            "Missing EEG units interpreted as uV by the MFF EEG convention; sample values are unchanged".into(),
         );
     }
+    for channel in &mut channels {
+        if channel.unit.as_ref().is_none_or(|u| u.trim().is_empty()) {
+            channel.unit = Some("uV".into());
+        }
+    }
+    read_impedance(&doc, &mut channels);
     let coordinates = path.join("coordinates.xml");
     if coordinates.exists() {
         let text = xml(&coordinates, &limits)?;
@@ -282,6 +291,7 @@ pub(crate) fn open(path: &Path, limits: Limits) -> Result<Recording> {
     }
     events.sort_by_key(|e| e.onset_ns);
     let metadata = Metadata {
+        sensor_layout_name,
         streams,
         eeg_stream,
         channels,
@@ -393,10 +403,10 @@ fn apply_epochs(
 
 fn calibrate(doc: &Document<'_>, channels: &mut [Channel]) -> Result<()> {
     let mut gcal_seen = false;
-    for cal in doc
-        .descendants()
-        .filter(|n| named(*n, "calibration") && child(*n, "type") == Some("GCAL"))
-    {
+    for cal in doc.descendants().filter(|n| {
+        named(*n, "calibration")
+            && child(*n, "type").is_some_and(|s| s.eq_ignore_ascii_case("GCAL"))
+    }) {
         if gcal_seen {
             return Err(Error::Unsupported("multiple GCAL calibrations".into()));
         }
@@ -427,6 +437,41 @@ fn calibrate(doc: &Document<'_>, channels: &mut [Channel]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+// Match Swift's first usable acquisition-start ICAL measurement. ICAL is
+// contact impedance, not gain. Absent/nonfinite entries stay unknown.
+fn read_impedance(doc: &Document<'_>, channels: &mut [Channel]) {
+    for cal in doc.descendants().filter(|n| {
+        named(*n, "calibration")
+            && child(*n, "type").is_some_and(|s| s.eq_ignore_ascii_case("ICAL"))
+    }) {
+        if child(cal, "beginTime").is_some_and(|s| {
+            s.parse::<f64>()
+                .map_or(true, |v| !v.is_finite() || v.abs() > 0.000001)
+        }) {
+            continue;
+        }
+        let mut any = false;
+        for (seq, node) in cal.descendants().filter(|n| named(*n, "ch")).enumerate() {
+            let number = node
+                .attribute("n")
+                .or(node.attribute("number"))
+                .or(node.attribute("channel"))
+                .map_or(Some(seq + 1), |s| s.trim().parse::<usize>().ok());
+            let value = node.text().unwrap_or("").trim().parse::<f32>().ok();
+            if let (Some(n), Some(v)) = (number, value) {
+                if n == 0 || n > channels.len() || !v.is_finite() || v < 0.0 {
+                    continue;
+                }
+                channels[n - 1].impedance_kohm = Some(v);
+                any = true;
+            }
+        }
+        if any {
+            break;
+        }
+    }
 }
 
 fn open_pns(
@@ -460,6 +505,7 @@ fn open_pns(
             unit: None,
             calibration: 1.,
             positive_up: None,
+            impedance_kohm: None,
         })
         .collect();
     let id = descriptor
@@ -518,6 +564,7 @@ fn open_pns(
             .push("PNS acquisition timing metadata preserved; no additional shift applied".into());
     }
     let metadata = Metadata {
+        sensor_layout_name: primary.sensor_layout_name.clone(),
         streams: primary.streams.clone(),
         eeg_stream: stream,
         channels,

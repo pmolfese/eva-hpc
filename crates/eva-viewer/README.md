@@ -297,3 +297,17 @@ This first port does not yet reopen saved PSA bundles or implement macOS's Decis
 Matrix, eye detectors or segmented-MFF export. See the CLI README for the exact
 shared options, limitations and binary layout. PSA does not modify the source MFF
 or replace the continuous waveform used by other tools.
+
+## Ocular artifacts
+
+**ARTIFACTS** opens the threshold-only sheet with separate blink/vertical and
+movement/horizontal tabs, Swift EVA defaults, and hover `?` explanations. Run
+detection on the current processing snapshot, inspect intervals and peak times,
+jump to candidates, or export a new JSON report. Purple/teal marks show the last
+completed detection; rerun after changing processing. Source EEG stays unchanged.
+No Define Artifact, templates, or artifact cleaning is enabled.
+
+The timeline has separate **Events**, **DINs / TREV**, and **Artifacts** tracks.
+Artifact spans carry Blink / Eye movement labels and peak markers. Labels are
+kept inside each track and use two shelves to avoid overlap; hover a crowded
+marker or span for its full name and timing.

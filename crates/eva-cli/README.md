@@ -280,3 +280,12 @@ Decision Matrix manual cell edits, automatic eye/health detectors, regex categor
 and DIN reassignment are not part of this first port. The options shown here are
 implemented; this is not a claim of full macOS PSA parity. An all-rejected run writes
 its audit report with empty data/average arrays instead of inventing an average.
+
+## Ocular threshold detection
+
+`eva artifactdetect -blink-minimum 100 -movement-minimum 125 input.mff eyes.json`
+writes a new JSON report without changing EEG. `eva artifactdetect -help` lists
+all independent blink/movement settings. Options use single dashes. The shared
+engine matches Swift EVA's threshold detector; templates and cleaning are not
+included. See the root README for signal modes, channel selection, and output
+semantics.

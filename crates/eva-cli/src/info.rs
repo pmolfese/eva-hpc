@@ -43,7 +43,7 @@ Metrics:
   -history|-processing  Ordered processing steps with ALL parameters and notes
   -labels|-names      JSON channel-name array (recorded order)
   -locations          JSON raw coordinates and unit-sphere positions
-  -channels           JSON channel table: number, name, units, GCAL, position
+  -channels           JSON channel table: number, name, units, GCAL, impedance (kOhm), position
   -nlocations         Number of scalp channels with usable unit-sphere positions
   -reference          Acquisition reference metadata
   -streams            EEG/PNS rate, sample counts, duration, gap counts
@@ -81,7 +81,7 @@ Output options:
 
 Tables escape tabs/newlines/backslashes inside cells. CSV follows normal quoting.
 Structured table cells use compact JSON. Coordinates retain their original XML
-values; units are unspecified unless declared. Unit-sphere coordinates are not mm.
+values; missing EEG units use the MFF uV convention. Unit-sphere coordinates are not mm.
 Gaps come from indexed block timing, not NaNs within acquired sample values.
 Missing eva.xml means no recorded history, not proof of unprocessed samples.
 Malformed eva.xml is reported in warnings (history is null, not empty).
@@ -392,7 +392,7 @@ fn report(path: &Path, o: &Options) -> Result<(Value, Vec<Event>), String> {
     let acquired = r.acquired_sample_count();
     let gap_samples: u64 = gaps.iter().map(|g| g.end - g.start).sum();
     let locations:Vec<_>=m.channels.iter().map(|c|json!({"channel":c.index+1,"name":c.label,"original":positions.get(&(c.index+1)),"unit_sphere":c.position})).collect();
-    let channels:Vec<_>=m.channels.iter().map(|c|json!({"channel":c.index+1,"name":c.label,"unit":c.unit,"calibration":c.calibration,"positive_up":c.positive_up,"location":locations[c.index]})).collect();
+    let channels:Vec<_>=m.channels.iter().map(|c|json!({"channel":c.index+1,"name":c.label,"unit":c.unit,"calibration":c.calibration,"impedance_kohm":c.impedance_kohm,"positive_up":c.positive_up,"location":locations[c.index]})).collect();
     let events: Vec<_> = m.events.iter().map(|e| event_json(e, r, &gaps)).collect();
     let mut streams = vec![stream_summary(&root)];
     if let Some(p) = root.pns() {

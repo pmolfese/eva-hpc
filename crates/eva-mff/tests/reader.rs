@@ -517,3 +517,36 @@ fn acquired_nan_is_not_an_acquisition_gap_but_rejects_epoch() {
         .unwrap()
         .is_some());
 }
+
+#[test]
+fn eeg_units_and_impedance_do_not_change_gain() {
+    let d = fixture();
+    let info = d.path().join("info7.xml");
+    let text = fs::read_to_string(&info).unwrap().replace("</calibrations>",
+        "<calibration><type>ICAL</type><beginTime>100</beginTime><ch>999</ch></calibration><calibration><type>ical</type><beginTime>0</beginTime><ch number='2'>42.5</ch><ch channel='1'>NaN</ch><ch n='99'>10</ch></calibration></calibrations>");
+    fs::write(info, text).unwrap();
+    let r = Recording::open(d.path()).unwrap();
+    assert_eq!(r.metadata().channels[1].unit.as_deref(), Some("uV"));
+    assert_eq!(r.metadata().channels[0].impedance_kohm, None);
+    assert_eq!(r.metadata().channels[1].impedance_kohm, Some(42.5));
+    assert_eq!(
+        r.read_window(&[0, 1], 0..1, SampleValues::Calibrated)
+            .unwrap()
+            .values,
+        vec![vec![2.], vec![5.]]
+    );
+    let layout = d.path().join("sensorLayout.xml");
+    fs::write(
+        &layout,
+        fs::read_to_string(&layout)
+            .unwrap()
+            .replace("<unit>uV</unit>", "<unit>mV</unit>"),
+    )
+    .unwrap();
+    assert_eq!(
+        Recording::open(d.path()).unwrap().metadata().channels[0]
+            .unit
+            .as_deref(),
+        Some("mV")
+    );
+}

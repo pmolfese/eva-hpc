@@ -264,7 +264,9 @@ pub fn run(
 ) -> Result<ResultData, String> {
     let (pre, len, bs, be) = c.validate(r)?;
     check(g, id)?;
-    let plan = filter::Plan::new(filters, r.metadata().sample_rate)?.with_source(source);
+    let plan = filter::Plan::new(filters, r.metadata().sample_rate)?
+        .with_source(source)
+        .with_psa_cache();
     let channels = r.metadata().channels.len();
     let candidates: Vec<_> = r
         .metadata()
@@ -389,11 +391,7 @@ pub fn run(
         }) {
             d.reason = "Artifact event overlap".into();
         } else {
-            let mut x = Vec::with_capacity(channels);
-            for ch in 0..channels {
-                check(g, id)?;
-                x.push(plan.read(r, ch, start as u64..end as u64, g, id)?);
-            }
+            let x = plan.read_epoch_channels(r, start as u64..end as u64, g, id)?;
             if x.iter().flatten().any(|v| !v.is_finite()) {
                 d.reason = "Nonfinite samples".into();
             } else {
@@ -491,14 +489,18 @@ pub fn run(
             d.repaired_channels = targets.iter().map(|ch| ch + 1).collect();
         }
         if c.average_reference {
-            for s in 0..len {
-                let mean = reference
-                    .iter()
-                    .map(|ch| f64::from(epoch.values[*ch][s]))
-                    .sum::<f64>()
-                    / reference.len() as f64;
-                for row in &mut epoch.values {
-                    row[s] = (f64::from(row[s]) - mean) as f32;
+            let mut mean = vec![0f64; len];
+            for &ch in &reference {
+                for (sum, &v) in mean.iter_mut().zip(&epoch.values[ch]) {
+                    *sum += f64::from(v);
+                }
+            }
+            for v in &mut mean {
+                *v /= reference.len() as f64;
+            }
+            for row in &mut epoch.values {
+                for (v, &m) in row.iter_mut().zip(&mean) {
+                    *v = (f64::from(*v) - m) as f32;
                 }
             }
         }
@@ -535,12 +537,14 @@ pub fn run(
                 .collect();
             let mut values = vec![vec![0f32; len]; channels];
             for (ch, row) in values.iter_mut().enumerate() {
-                for (s, v) in row.iter_mut().enumerate() {
-                    *v = (members
-                        .iter()
-                        .map(|e| f64::from(e.values[ch][s]))
-                        .sum::<f64>()
-                        / members.len() as f64) as f32;
+                let mut sum = vec![0f64; len];
+                for epoch in &members {
+                    for (v, &sample) in sum.iter_mut().zip(&epoch.values[ch]) {
+                        *v += f64::from(sample);
+                    }
+                }
+                for (v, sum) in row.iter_mut().zip(sum) {
+                    *v = (sum / members.len() as f64) as f32;
                 }
             }
             result.averages.push(Average {

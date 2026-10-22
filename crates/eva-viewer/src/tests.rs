@@ -696,3 +696,20 @@ fn psa_modal_snapshot_results_and_close_cancel() {
     assert!(app.psa.result.is_none());
     assert!(!app.psa.running);
 }
+
+#[test]
+fn ocular_sheet_detect_and_reset_on_close() {
+    let d = fixture();
+    let ctx = egui::Context::default();
+    let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), None);
+    app.open(d.path().to_owned());
+    until(&mut app, &ctx, |a| a.recording.is_some());
+    app.ocular.open = true;
+    tick(&mut app, &ctx, Vec2::new(1280., 900.));
+    app.start_ocular(&ctx);
+    until(&mut app, &ctx, |a| !a.ocular.running);
+    assert!(app.ocular.result.is_some());
+    app.close();
+    assert!(app.ocular.result.is_none());
+    assert!(!app.ocular.open);
+}
